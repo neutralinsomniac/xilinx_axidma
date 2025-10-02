@@ -44,8 +44,8 @@
  * Internal Definitions
  *----------------------------------------------------------------------------*/
 
-// The default timeout for DMA is 10 seconds
-#define AXIDMA_DMA_TIMEOUT      10000
+// The default timeout for DMA is 1000 msec
+#define AXIDMA_DMA_TIMEOUT      1000
 
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
@@ -143,7 +143,7 @@ static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
 static void axidma_dma_callback(void *data)
 {
     struct axidma_cb_data *cb_data;
-    struct siginfo sig_info;
+    struct kernel_siginfo sig_info;
 
     /* For synchronous transfers, notify the kernel thread waiting. For
      * asynchronous transfers, send a signal to userspace if requested. */
@@ -618,7 +618,7 @@ int axidma_stop_channel(struct axidma_device *dev,
 
     // Get the transmit and receive channels with the given ids.
     chan = axidma_get_chan(dev, chan_info->channel_id);
-    if (chan == NULL && chan->type != chan_info->type &&
+    if (chan == NULL || chan->type != chan_info->type ||
             chan->dir != chan_info->dir) {
         axidma_err("Invalid channel id %d for %s %s channel.\n",
             chan_info->channel_id, axidma_type_to_string(chan_info->type),

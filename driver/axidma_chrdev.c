@@ -34,9 +34,6 @@
  * Internal Definitions
  *----------------------------------------------------------------------------*/
 
-// TODO: Maybe this can be improved?
-static struct axidma_device *axidma_dev;
-
 // A structure that represents a DMA buffer allocation
 struct axidma_dma_allocation {
     size_t size;                // Size of the buffer
@@ -44,6 +41,7 @@ struct axidma_dma_allocation {
     void *kern_addr;            // Kernel virtual address of the buffer
     dma_addr_t dma_addr;        // DMA bus address of the buffer
     struct list_head list;      // List node pointers for allocation list
+    struct device *device;      // Device structure for the char device
 };
 
 /* A structure that represents a DMA buffer allocation imported from another
@@ -205,13 +203,11 @@ static int axidma_put_external(struct axidma_device *dev, void *user_addr)
 
 static void axidma_vma_close(struct vm_area_struct *vma)
 {
-    struct axidma_device *dev;
     struct axidma_dma_allocation *dma_alloc;
 
     // Get the AXI DMA allocation data and free the DMA buffer
-    dev = axidma_dev;
     dma_alloc = vma->vm_private_data;
-    dma_free_coherent(&dev->pdev->dev, dma_alloc->size, dma_alloc->kern_addr,
+    dma_free_coherent(dma_alloc->device, dma_alloc->size, dma_alloc->kern_addr,
                       dma_alloc->dma_addr);
 
     // Remove the allocation from the list, and free the structure
@@ -242,7 +238,8 @@ static int axidma_open(struct inode *inode, struct file *file)
     }
 
     // Place the axidma structure in the private data of the file
-    file->private_data = (void *)axidma_dev;
+    file->private_data = container_of(inode->i_cdev, struct axidma_device,
+            chrdev);
     return 0;
 }
 
@@ -272,9 +269,10 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     // Set the user virtual address and the size
     dma_alloc->size = vma->vm_end - vma->vm_start;
     dma_alloc->user_addr = (void *)vma->vm_start;
+    dma_alloc->device = &dev->pdev->dev;
 
     // Configure the DMA device
-    of_dma_configure(dev->device, NULL);
+    of_dma_configure(&dev->pdev->dev, NULL, true);
 
     // Allocate the requested region a contiguous and uncached for DMA
     dma_alloc->kern_addr = dma_alloc_coherent(&dev->pdev->dev, dma_alloc->size,
@@ -306,7 +304,7 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     // Do not copy this memory region if this process is forked.
     /* TODO: Figure out the proper way to actually handle multiple processes
      * referring to the DMA buffer. */
-    vma->vm_flags |= VM_DONTCOPY;
+    vm_flags_set(vma, VM_DONTCOPY);
 
     // Add the allocation to the driver's list of DMA buffers
     list_add(&dma_alloc->list, &dev->dmabuf_list);
@@ -325,13 +323,8 @@ ret:
  * The user specifies the mode, either readonly, or not (read-write). */
 static bool axidma_access_ok(const void __user *arg, size_t size, bool readonly)
 {
-    // Note that VERIFY_WRITE implies VERIFY_WRITE, so read-write is handled
-    if (!readonly && !access_ok(VERIFY_WRITE, arg, size)) {
-        axidma_err("Argument address %p, size %zu cannot be written to.\n",
-                   arg, size);
-        return false;
-    } else if (!access_ok(VERIFY_READ, arg, size)) {
-        axidma_err("Argument address %p, size %zu cannot be read from.\n",
+    if (!access_ok(arg, size)) {
+        axidma_err("Argument address %p, size %zu cannot be accessed.\n",
                    arg, size);
         return false;
     }
@@ -551,9 +544,6 @@ int axidma_chrdev_init(struct axidma_device *dev)
 {
     int rc;
 
-    // Store a global pointer to the axidma device
-    axidma_dev = dev;
-
     // Allocate a major and minor number region for the character device
     rc = alloc_chrdev_region(&dev->dev_num, dev->minor_num, dev->num_devices,
                              dev->chrdev_name);
@@ -563,7 +553,7 @@ int axidma_chrdev_init(struct axidma_device *dev)
     }
 
     // Create a device class for our device
-    dev->dev_class = class_create(THIS_MODULE, dev->chrdev_name);
+    dev->dev_class = class_create(dev->chrdev_name);
     if (IS_ERR(dev->dev_class)) {
         axidma_err("Unable to create a device class.\n");
         rc = PTR_ERR(dev->dev_class);

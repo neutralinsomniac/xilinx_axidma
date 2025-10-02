@@ -10,6 +10,7 @@
  **/
 
 // Kernel dependencies
+#include <linux/of_address.h>       // Module init and exit macros
 #include <linux/module.h>           // Module init and exit macros
 #include <linux/moduleparam.h>      // Module param macro
 #include <linux/slab.h>             // Allocation functions
@@ -54,8 +55,7 @@ static int axidma_probe(struct platform_device *pdev)
         goto free_axidma_dev;
     }
 
-    // Assign the character device name, minor number, and number of devices
-    axidma_dev->chrdev_name = chrdev_name;
+    // Assign the minor number and number of devices (name will be assigned dynamically by axidma_of_parse_chrdev_name())
     axidma_dev->minor_num = minor_num;
     axidma_dev->num_devices = NUM_DEVICES;
 
@@ -76,7 +76,7 @@ free_axidma_dev:
     return -ENOSYS;
 }
 
-static int axidma_remove(struct platform_device *pdev)
+static void axidma_remove(struct platform_device *pdev)
 {
     struct axidma_device *axidma_dev;
 
@@ -91,7 +91,7 @@ static int axidma_remove(struct platform_device *pdev)
 
     // Free the device structure
     kfree(axidma_dev);
-    return 0;
+    return;
 }
 
 static const struct of_device_id axidma_compatible_of_ids[] = {
@@ -133,3 +133,5 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
 MODULE_DESCRIPTION("Module to provide a userspace interface for transferring "
                    "data from the processor to the logic fabric via AXI DMA.");
+
+MODULE_IMPORT_NS(DMA_BUF);

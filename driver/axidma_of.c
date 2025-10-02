@@ -77,6 +77,23 @@ static int axidma_of_parse_dma_name(struct device_node *driver_node, int index,
     return 0;
 }
 
+static int axidma_of_parse_chrdev_name(struct device_node *driver_node,
+                                    struct axidma_device *dev)
+{
+    int rc;
+
+    // Parse the character device name from the 'chrdev-name' property
+    rc = of_property_read_string(driver_node, "chrdev-name", &dev->chrdev_name);
+    if (rc < 0) {
+        axidma_node_err(driver_node, "Unable to read name from the "
+                        "'chrdev-name' property.\n");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+
 static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         struct axidma_chan *chan, struct axidma_device *dev)
 {
@@ -95,14 +112,16 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
 
     // Go to the child node that we're parsing
     dma_chan_node = of_get_next_child(dma_node, NULL);
-    if (channel == 1) {
+    /* the following crashes if there was only one RX channel without a TX channel
+     * if (channel == 1) {
         dma_chan_node = of_get_next_child(dma_node, dma_chan_node);
-    }
+    } */
 
     // Check if the specified node exists
     if (dma_chan_node == NULL) {
-        axidma_node_err(dma_chan_node, "Unable to find child node number %d.\n",
+        axidma_node_err(dma_node, "Unable to find child node number %d.\n",
                 channel);
+        return -EINVAL;
     }
 
     // Read out the channel's unique device id, and put it in the structure
@@ -218,7 +237,13 @@ int axidma_of_parse_dma_nodes(struct platform_device *pdev,
     dev->num_vdma_tx_chans = 0;
     dev->num_vdma_rx_chans = 0;
 
-    /* For each DMA channel specified in the deivce tree, parse out the
+    // Get the character device name
+    rc = axidma_of_parse_chrdev_name(driver_node, dev);
+    if (rc < 0) {
+        return rc;
+    }
+
+    /* For each DMA channel specified in the device tree, parse out the
      * information about the channel, namely its direction and type. */
     for (i = 0; i < dev->num_chans; i++)
     {

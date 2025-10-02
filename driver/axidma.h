@@ -50,7 +50,7 @@ struct axidma_device {
     int num_devices;                // The number of devices
     unsigned int minor_num;         // The minor number of the device
     dev_t dev_num;                  // The device number of the device
-    char *chrdev_name;              // The name of the character device
+    const char *chrdev_name;        // The name of the character device
     struct device *device;          // Device structure for the char device
     struct class *dev_class;        // The device class for the chardevice
     struct cdev chrdev;             // The character device structure
